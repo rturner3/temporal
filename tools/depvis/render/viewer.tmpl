@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>depvis — {{.Title}}</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1f2933;
+    background: #f7f9fb;
+  }
+  header {
+    padding: 16px 24px;
+    background: #fff;
+    border-bottom: 1px solid #e4e7eb;
+  }
+  header h1 { margin: 0 0 4px; font-size: 18px; }
+  header .target { margin: 0 0 12px; color: #616e7c; font-size: 13px; }
+  #filters { border: 1px solid #e4e7eb; border-radius: 6px; padding: 8px 12px; display: inline-block; }
+  #filters legend { font-size: 12px; color: #616e7c; padding: 0 4px; }
+  #filters label { margin-right: 16px; font-size: 13px; white-space: nowrap; }
+  #filters input { margin-right: 4px; vertical-align: middle; }
+  main { padding: 24px; }
+  #graph { background: #fff; border: 1px solid #e4e7eb; border-radius: 6px; padding: 16px; overflow: auto; }
+  #graph svg { max-width: 100%; height: auto; }
+  #empty-message, #graph-error {
+    background: #fff; border: 1px solid #e4e7eb; border-radius: 6px;
+    padding: 32px; text-align: center; color: #616e7c; font-size: 14px;
+  }
+  #graph-error { color: #b71525; display: none; }
+  #unresolved-section { padding: 0 24px 24px; }
+  #unresolved-section h2 { font-size: 15px; margin: 0 0 8px; }
+  #unresolved-list, #unresolved-none {
+    background: #fff; border: 1px solid #e4e7eb; border-radius: 6px;
+    padding: 12px 24px; margin: 0; font-size: 13px; color: #3e4c59;
+  }
+  #unresolved-list li { margin: 4px 0; }
+  #unresolved-none { color: #616e7c; list-style: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Workflow dependency graph</h1>
+  <p class="target">module {{.Title}} · static analysis by depvis</p>
+  <fieldset id="filters">
+    <legend>Filter by node type</legend>
+    {{range .Types}}<label><input type="checkbox" class="depvis-type" data-type="{{.}}" checked> {{.}}</label>{{end}}
+  </fieldset>
+</header>
+<main>
+  <div id="graph"></div>
+  <div id="empty-message" hidden>No nodes match the selected filters. Check at least one node type above.</div>
+  <div id="graph-error"></div>
+</main>
+<section id="unresolved-section">
+  <h2>Unresolved call sites ({{.UnresolvedCount}})</h2>
+  <ul id="unresolved-list" hidden></ul>
+  <p id="unresolved-none" hidden>No unresolved call sites: every name in this graph was fully resolved.</p>
+</section>
+<noscript><p style="padding:24px">This viewer needs JavaScript to render the graph.</p></noscript>
+<script type="application/json" id="depvis-data">{{.Payload}}</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+
+const data = JSON.parse(document.getElementById("depvis-data").textContent);
+const graph = data.graph;
+const fullMermaid = data.mermaid.trim();
+const container = document.getElementById("graph");
+const emptyMessage = document.getElementById("empty-message");
+const errorMessage = document.getElementById("graph-error");
+const checkboxes = Array.from(document.querySelectorAll("input.depvis-type"));
+
+// Node shapes mirror the Go emitter in tools/depvis/render/mermaid.go.
+const SHAPES = {
+  workflow: ["(", ")"],
+  child_workflow: ["(", ")"],
+  activity: ["([", "])"],
+  database: ["[(", ")]"],
+  queue: ["[/", "/]"],
+  nexus_operation: ["{", "}"],
+  external_service: ["((", "))"],
+};
+
+function escapeLabel(s) {
+  return s.replace(/"/g, "#quot;").replace(/\n/g, " ");
+}
+
+// buildSource rebuilds the Mermaid flowchart for a filtered subgraph. The
+// full graph uses the pre-rendered source instead, so the served Mermaid
+// output is exactly what the CLI emits.
+function buildSource(nodes, edges) {
+  const ids = new Map();
+  const used = new Set();
+  const alloc = (id) => {
+    if (ids.has(id)) { return ids.get(id); }
+    const base = id.replace(/[^A-Za-z0-9_]/g, "_");
+    let name = base;
+    let i = 2;
+    while (used.has(name)) { name = base + "_" + i; i += 1; }
+    used.add(name);
+    ids.set(id, name);
+    return name;
+  };
+  const lines = ["flowchart TD"];
+  for (const n of nodes) {
+    const shape = SHAPES[n.type] || ["[", "]"];
+    lines.push("    " + alloc(n.id) + shape[0] + '"' + escapeLabel(n.name) + '"' + shape[1]);
+  }
+  const dashedEdges = [];
+  edges.forEach((e, i) => {
+    lines.push("    " + alloc(e.from) + ' -->|"' + escapeLabel(e.kind) + '"| ' + alloc(e.to));
+    if (e.inferred) { dashedEdges.push(i); }
+  });
+  const dashedNodes = nodes.filter((n) => n.unresolved).map((n) => alloc(n.id));
+  if (dashedNodes.length) {
+    lines.push("    classDef unresolved stroke-dasharray: 5 5");
+    lines.push("    class " + dashedNodes.join(",") + " unresolved");
+  }
+  for (const i of dashedEdges) {
+    lines.push("    linkStyle " + i + " stroke-dasharray: 5 5");
+  }
+  return lines.join("\n");
+}
+
+function activeTypes() {
+  return new Set(checkboxes.filter((c) => c.checked).map((c) => c.dataset.type));
+}
+
+async function render() {
+  const types = activeTypes();
+  const nodes = graph.nodes.filter((n) => types.has(n.type));
+  const visible = new Set(nodes.map((n) => n.id));
+  const edges = graph.edges.filter((e) => visible.has(e.from) && visible.has(e.to));
+
+  if (!nodes.length) {
+    container.hidden = true;
+    errorMessage.style.display = "none";
+    emptyMessage.hidden = false;
+    container.innerHTML = "";
+    return;
+  }
+  emptyMessage.hidden = true;
+  container.hidden = false;
+
+  const source = nodes.length === graph.nodes.length ? fullMermaid : buildSource(nodes, edges);
+  try {
+    const render = await mermaid.render("depvis-svg", source);
+    errorMessage.style.display = "none";
+    container.innerHTML = render.svg;
+  } catch (err) {
+    container.innerHTML = "";
+    errorMessage.textContent = "The graph renderer failed on this input: " + err;
+    errorMessage.style.display = "block";
+  }
+}
+
+function renderUnresolved() {
+  const list = document.getElementById("unresolved-list");
+  const none = document.getElementById("unresolved-none");
+  if (!graph.unresolved.length) {
+    none.hidden = false;
+    return;
+  }
+  list.hidden = false;
+  for (const u of graph.unresolved) {
+    const li = document.createElement("li");
+    li.textContent = u.location + " — " + u.call + " (" + u.reason + ")";
+    list.appendChild(li);
+  }
+}
+
+for (const c of checkboxes) {
+  c.addEventListener("change", () => { render(); });
+}
+
+renderUnresolved();
+render();
+</script>
+</body>
+</html>

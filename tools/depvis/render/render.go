@@ -20,6 +20,18 @@ const (
 	FormatHTML    = "html"
 )
 
+// IsValidFormat reports whether format is one of the formats Render
+// accepts. Callers validate the format before an expensive analysis run so
+// a typo fails fast with a readable error.
+func IsValidFormat(format string) bool {
+	switch format {
+	case FormatJSON, FormatMermaid, FormatDOT, FormatHTML:
+		return true
+	default:
+		return false
+	}
+}
+
 // Render renders g in the named format. JSON, Mermaid and DOT return the
 // rendered text directly; HTML returns a complete standalone page.
 func Render(g *graph.DepGraph, format string) (string, error) {

@@ -2,78 +2,91 @@ package depvis
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/tools/depvis/analyzer"
+	"go.temporal.io/server/tools/depvis/render"
 )
 
 // NewCliApp instantiates a new instance of the depvis CLI application.
+//
+// The default (subcommand-less) action is the full analysis run:
+//
+//	depvis --dir ./service/worker --format mermaid
+//	depvis --dir ./service/worker --format html --out deps.html
+//	depvis --dir ./service/worker --annotations plan.yaml --format json
+//
+// The pilot subcommand is the feasibility spike that validates name
+// resolution over a target codebase.
 func NewCliApp() *cli.App {
 	return &cli.App{
 		Name:  "depvis",
 		Usage: "Extract and visualize the dependency graph of Temporal Go SDK workflows via static analysis",
-		Commands: []*cli.Command{
-			newPilotCommand(),
-			newAnalyzeCommand(),
-		},
-	}
-}
-
-// newAnalyzeCommand builds the analyze subcommand: the full analyzer run over
-// a Go module tree, emitting the canonical DepGraph as JSON.
-func newAnalyzeCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "analyze",
-		Usage: "Extract the workflow dependency graph of a Go module directory",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "dir",
-				Usage:    "directory of the Go module or package tree to analyze (loaded as ./...)",
-				Required: true,
+				Name:  "dir",
+				Usage: "directory of the Go module or package tree to analyze (loaded as ./...)",
+			},
+			&cli.StringFlag{
+				Name:  "format",
+				Usage: "output format: json, mermaid, dot, or html",
+				Value: render.FormatJSON,
+			},
+			&cli.StringFlag{
+				Name:  "out",
+				Usage: "write the rendered graph to this file instead of stdout",
 			},
 			&cli.StringFlag{
 				Name:  "annotations",
 				Usage: "optional annotations file (YAML or JSON) mapping activity/workflow names to resources; overrides heuristics",
 			},
-			&cli.StringFlag{
-				Name:  "out",
-				Usage: "write the JSON graph to this file instead of stdout",
-			},
 		},
-		Action: runAnalyzeAction,
+		Action:   runAnalyzeAction,
+		Commands: []*cli.Command{newPilotCommand()},
 	}
 }
 
-// runAnalyzeAction runs the analyzer and emits the canonical graph as JSON.
+// runAnalyzeAction runs the analyzer over the target directory and emits the
+// canonical graph in the requested format.
 func runAnalyzeAction(c *cli.Context) error {
-	g, err := analyzer.Analyze(c.String("dir"), analyzer.Options{
+	dir := c.String("dir")
+	if dir == "" {
+		return errors.New("--dir is required: pass the Go module directory to analyze")
+	}
+	format := c.String("format")
+	if !render.IsValidFormat(format) {
+		return fmt.Errorf("unknown format %q (want one of: json, mermaid, dot, html)", format)
+	}
+
+	g, err := analyzer.Analyze(dir, analyzer.Options{
 		Annotations: c.String("annotations"),
 	})
 	if err != nil {
 		return err
 	}
 
-	data, err := json.MarshalIndent(g, "", "  ")
+	data, err := render.Render(g, format)
 	if err != nil {
-		return fmt.Errorf("marshaling graph: %w", err)
+		return err
 	}
-	data = append(data, '\n')
+	data += "\n"
 
 	out := c.String("out")
 	if out == "" {
-		if _, err := c.App.Writer.Write(data); err != nil {
+		if _, err := fmt.Fprint(c.App.Writer, data); err != nil {
 			return fmt.Errorf("writing graph: %w", err)
 		}
 		return nil
 	}
-	return os.WriteFile(out, data, 0o644)
+	return os.WriteFile(out, []byte(data), 0o644)
 }
 
 // newPilotCommand builds the pilot subcommand: the feasibility spike that
 // validates name resolution over a target codebase before the full analyzer
-// is built out.
+// is trusted.
 func newPilotCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "pilot",

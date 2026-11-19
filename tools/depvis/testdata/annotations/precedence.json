@@ -1,0 +1,6 @@
+{
+  "annotations": [
+    { "name": "PublishActivity", "type": "external_service", "label": "payments-gateway", "technology": "stripe" },
+    { "name": "NoDependenciesWorkflow", "type": "queue", "label": "audit-events" }
+  ]
+}

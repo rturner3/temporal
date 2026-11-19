@@ -12,6 +12,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"go.temporal.io/server/tools/depvis"
@@ -20,6 +21,7 @@ import (
 func main() {
 	app := depvis.NewCliApp()
 	if err := app.Run(os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, "depvis:", err)
 		os.Exit(1)
 	}
 }

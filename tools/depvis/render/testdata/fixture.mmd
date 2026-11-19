@@ -1,0 +1,23 @@
+flowchart TD
+    activity_ChargeCard(["ChargeCard"])
+    activity_DynamicExport(["DynamicExport"])
+    activity_RefundOrder(["RefundOrder"])
+    child_workflow_Fulfillment("Fulfillment")
+    database_orders_db[("orders-db")]
+    external_service_stripe_api(("stripe-api"))
+    nexus_operation_GetShippingQuote{"GetShippingQuote"}
+    queue_billing_events[/"billing-events"/]
+    workflow_OrderParent("OrderParent")
+    activity_ChargeCard -->|"touches_resource"| external_service_stripe_api
+    activity_RefundOrder -->|"touches_resource"| database_orders_db
+    activity_RefundOrder -->|"touches_resource"| queue_billing_events
+    workflow_OrderParent -->|"executes_activity"| activity_ChargeCard
+    workflow_OrderParent -->|"executes_activity"| activity_DynamicExport
+    workflow_OrderParent -->|"executes_activity"| activity_RefundOrder
+    workflow_OrderParent -->|"executes_child"| child_workflow_Fulfillment
+    workflow_OrderParent -->|"nexus_operation"| nexus_operation_GetShippingQuote
+    classDef unresolved stroke-dasharray: 5 5
+    class activity_DynamicExport unresolved
+    linkStyle 0 stroke-dasharray: 5 5
+    linkStyle 1 stroke-dasharray: 5 5
+    linkStyle 2 stroke-dasharray: 5 5

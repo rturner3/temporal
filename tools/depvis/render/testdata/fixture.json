@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "target": {
+    "modulePath": "example.com/app",
+    "dir": "order"
+  },
+  "nodes": [
+    {
+      "id": "activity:ChargeCard",
+      "type": "activity",
+      "name": "ChargeCard",
+      "location": "order/activities.go:41"
+    },
+    {
+      "id": "workflow:OrderParent",
+      "type": "workflow",
+      "name": "OrderParent",
+      "location": "order/workflow.go:22"
+    },
+    {
+      "id": "database:orders-db",
+      "type": "database",
+      "name": "orders-db",
+      "inferred": true,
+      "via": "database/sql"
+    },
+    {
+      "id": "external_service:stripe-api",
+      "type": "external_service",
+      "name": "stripe-api",
+      "inferred": true,
+      "via": "net/http"
+    },
+    {
+      "id": "child_workflow:Fulfillment",
+      "type": "child_workflow",
+      "name": "Fulfillment",
+      "location": "fulfillment/workflow.go:10"
+    },
+    {
+      "id": "activity:RefundOrder",
+      "type": "activity",
+      "name": "RefundOrder",
+      "location": "order/activities.go:58"
+    },
+    {
+      "id": "nexus_operation:GetShippingQuote",
+      "type": "nexus_operation",
+      "name": "GetShippingQuote",
+      "location": "order/workflow.go:90"
+    },
+    {
+      "id": "queue:billing-events",
+      "type": "queue",
+      "name": "billing-events",
+      "inferred": true,
+      "via": "github.com/segmentio/kafka-go"
+    },
+    {
+      "id": "activity:DynamicExport",
+      "type": "activity",
+      "name": "DynamicExport",
+      "unresolved": true
+    }
+  ],
+  "edges": [
+    {
+      "from": "workflow:OrderParent",
+      "to": "activity:RefundOrder",
+      "kind": "executes_activity",
+      "location": "order/workflow.go:64"
+    },
+    {
+      "from": "activity:ChargeCard",
+      "to": "external_service:stripe-api",
+      "kind": "touches_resource",
+      "inferred": true
+    },
+    {
+      "from": "workflow:OrderParent",
+      "to": "child_workflow:Fulfillment",
+      "kind": "executes_child",
+      "location": "order/workflow.go:50"
+    },
+    {
+      "from": "workflow:OrderParent",
+      "to": "activity:ChargeCard",
+      "kind": "executes_activity",
+      "location": "order/workflow.go:58"
+    },
+    {
+      "from": "workflow:OrderParent",
+      "to": "nexus_operation:GetShippingQuote",
+      "kind": "nexus_operation",
+      "location": "order/workflow.go:90"
+    },
+    {
+      "from": "activity:RefundOrder",
+      "to": "queue:billing-events",
+      "kind": "touches_resource",
+      "inferred": true
+    },
+    {
+      "from": "activity:RefundOrder",
+      "to": "database:orders-db",
+      "kind": "touches_resource",
+      "inferred": true
+    },
+    {
+      "from": "workflow:OrderParent",
+      "to": "activity:DynamicExport",
+      "kind": "executes_activity",
+      "location": "order/workflow.go:77"
+    }
+  ],
+  "unresolved": [
+    {
+      "from": "workflow:OrderParent",
+      "call": "workflow.ExecuteActivity",
+      "reason": "non-constant name expression",
+      "location": "order/workflow.go:82"
+    }
+  ]
+}

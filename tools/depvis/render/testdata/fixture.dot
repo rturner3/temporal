@@ -1,0 +1,21 @@
+digraph depvis {
+    rankdir=LR;
+    "activity:ChargeCard" [label="ChargeCard", shape="oval"];
+    "activity:DynamicExport" [label="DynamicExport", shape="oval", style="dashed"];
+    "activity:RefundOrder" [label="RefundOrder", shape="oval"];
+    "child_workflow:Fulfillment" [label="Fulfillment", shape="box", style="rounded"];
+    "database:orders-db" [label="orders-db", shape="cylinder", fillcolor="#eef3fb", tooltip="database/sql", style="filled"];
+    "external_service:stripe-api" [label="stripe-api", shape="parallelogram", fillcolor="#eef3fb", tooltip="net/http", style="filled"];
+    "nexus_operation:GetShippingQuote" [label="GetShippingQuote", shape="hexagon"];
+    "queue:billing-events" [label="billing-events", shape="cds", fillcolor="#eef3fb", tooltip="github.com/segmentio/kafka-go", style="filled"];
+    "workflow:OrderParent" [label="OrderParent", shape="box", style="rounded"];
+    "activity:ChargeCard" -> "external_service:stripe-api" [label="touches_resource", style="dashed"];
+    "activity:RefundOrder" -> "database:orders-db" [label="touches_resource", style="dashed"];
+    "activity:RefundOrder" -> "queue:billing-events" [label="touches_resource", style="dashed"];
+    "workflow:OrderParent" -> "activity:ChargeCard" [label="executes_activity"];
+    "workflow:OrderParent" -> "activity:DynamicExport" [label="executes_activity"];
+    "workflow:OrderParent" -> "activity:RefundOrder" [label="executes_activity"];
+    "workflow:OrderParent" -> "child_workflow:Fulfillment" [label="executes_child"];
+    "workflow:OrderParent" -> "nexus_operation:GetShippingQuote" [label="nexus_operation"];
+    // unresolved: from workflow:OrderParent call workflow.ExecuteActivity at order/workflow.go:82 (non-constant name expression)
+}
